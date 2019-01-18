@@ -30,14 +30,17 @@ $copy_functions = {
 			Remove-Item $file
 			Write-Output "1"
 		} else {
+			#Move item instead? -> Will be faster?
 			if(copy-and-check $file ($src+"\original")){
 				Remove-Item $file
 				Write-Output "1"
 			} else {
+				# This is severe, because the backup seems a problem
 				Write-Output "2"
 			}
 		}
 	} else {
+		# This should trigger to copy the file to original
 		Write-Output "3"
 	}
 }
@@ -85,7 +88,8 @@ while ($active) {
 	if ($filesize -eq 0) {
 		# Here some start up routine, determine filesizes
 		$init_list = look-Files $src "*.mrc" "original"
-		if ($init_list.count -ne 0){
+		# wait for the first 4 files to appear
+		if ($init_list.count -ne 4){
 			$test_files = $init_list[0..3].FullName
 			while($true){
 				if ( ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[1]).length) -and ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[2]).length) -and ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[3]).length)){
@@ -178,3 +182,4 @@ while ($active) {
 # Todo
 # Sanity check inputs for type
 # Check if source and target dirs are actually there
+# Keeping the files is 2x slower because it performs an additional copy-and-check -> move instead and compare to the dest file?

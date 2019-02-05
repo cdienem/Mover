@@ -50,9 +50,19 @@ $copy_functions = {
 
 # get inputs
 $src = Read-Host -Prompt 'Path to MRC stacks'
+# Check existence
+if(!(Test-Path -Path $src )){
+	Write-Host "$src does not exist."
+	exit
+}
 Write-Host "Reading stacks from $src"
 
 $destination = Read-Host -Prompt 'Destination for MRC stacks'
+# Check existence
+if(!(Test-Path -Path $destination )){
+	Write-Host "$destination does not exist."
+	exit
+}
 Write-Host "Moving stacks to $destination"
 
 $limit = Read-Host -Prompt 'How many stacks should be processed in parallel?'
@@ -67,10 +77,11 @@ if ($delete -eq "y"){
 } else {
 	Write-Host "Unrecognized option for this parameter. Original files will be kept."
 	$delete = "n"
-	$out = New-Item -ItemType directory -Path ($src+"\original")
+	# Create originals folder if not existing
+	if(!(Test-Path -Path ($src+"\original") )){
+		$out = New-Item -ItemType directory -Path ($src+"\original")
+	}
 }
-
-# Error handling for New-Item???
 
 # File size
 $filesize = 0
@@ -113,7 +124,7 @@ while ($active) {
 				#$job | Select-Object -Property *
 				# Job should return a number
 				[int]$out = ($job | Receive-Job)
-				# Check states here: 1 = ok; 2 = checksum first copy; 3 = checksum second copy
+				# Check states here: 1 = ok; 2 = checksum second copy; 3 = checksum first copy
 				if ($out -eq 1){
 					Write-Host "Done copying "$job.Name
 				} elseif ($out -eq 2){
@@ -127,9 +138,7 @@ while ($active) {
 					$active = $FALSE
 				}
 				# Remove the jobs that are done
-				
 				$job | Remove-Job
-				# TODO: ALSO REMOVE FROM BATCH?
 			}
 		}
 		
@@ -179,7 +188,9 @@ while ($active) {
 	Start-sleep 1
 }
 
-# Todo
+# Todo:
 # Sanity check inputs for type
 # Check if source and target dirs are actually there
 # Keeping the files is 2x slower because it performs an additional copy-and-check -> move instead and compare to the dest file?
+# Set window size by script
+# Emercency triggers for checksum errors (exit codes 2 and 3) -> make backup folder

@@ -3,6 +3,30 @@ function look-Files($lookupPath, $extension, $filter){
 	return $files
 }
 
+function write-Debug($filename, $source, $dest, $batch, $error){
+	# Should retrieve the fileobject in question
+	# A list of files in source and dest
+	# The current batch
+	$sourcefiles = look-Files $source "*.mrc" "original"
+	$destfiles = look-Files $dest "*.mrc" "original"
+	$out = "
+	Error Type: $error
+	File name: $filename
+	Files at source:
+	$sourcefiles
+	
+	Files at destination:
+	$destfiles
+	
+	Current batch:
+	$batch
+	"
+	$path = $filename + ".txt"
+
+	$out | Out-File -FilePath $path
+	exit
+}
+
 # This is teh code executed by the spawned job
 $copy_functions = {
 	Param(	$file,
@@ -82,6 +106,7 @@ if ($delete -eq "y"){
 		$out = New-Item -ItemType directory -Path ($src+"\original")
 	}
 }
+$debug = Read-Host -Prompt 'Debug mode? (y/n)'
 
 # File size
 $filesize = 0
@@ -95,12 +120,15 @@ $startTime = Get-Date
 $lastTick = Get-Date
 
 
+
+
+
 while ($active) {
 	if ($filesize -eq 0) {
 		# Here some start up routine, determine filesizes
 		$init_list = look-Files $src "*.mrc" "original"
 		# wait for the first 4 files to appear
-		if ($init_list.count -ne 4){
+		if ($init_list.count -ge 4){
 			$test_files = $init_list[0..3].FullName
 			while($true){
 				if ( ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[1]).length) -and ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[2]).length) -and ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[3]).length)){
@@ -112,6 +140,9 @@ while ($active) {
 					Start-Sleep 5
 				}
 			}
+		} else {
+			Write-Host "Waiting for enough files to determine filesize..."
+			Start-sleep 5
 		}
 	} else {
 		# Start the actual moving here
@@ -127,14 +158,26 @@ while ($active) {
 				# Check states here: 1 = ok; 2 = checksum second copy; 3 = checksum first copy
 				if ($out -eq 1){
 					Write-Host "Done copying "$job.Name
+					
 				} elseif ($out -eq 2){
 					Write-Host "A checksum error occured while copying "$job.Name
 					Write-Host "Kept the original file just in case."
+					if ($debug -eq "y"){
+						write-Debug $job.Name $src $destination $batch $out
+					}
+					
 				} elseif($out -eq 3){
 					Write-Host "A checksum error occured while copying "$job.Name
 					Write-Host "Kept the original file just in case."
+					if ($debug -eq "y"){
+						write-Debug $job.Name $src $destination $batch $out
+					}
+					
 				} else {
 					Write-Host "An unknown error has occured. Stopping execution."
+					if ($debug -eq "y"){
+						write-Debug $job.Name $src $destination $batch $out
+					}
 					$active = $FALSE
 				}
 				# Remove the jobs that are done

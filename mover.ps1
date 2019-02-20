@@ -233,7 +233,4 @@ while ($TRUE) {
 
 # Todo:
 # Sanity check inputs for type
-# Check if source and target dirs are actually there
 # Keeping the files is 2x slower because it performs an additional copy-and-check -> move instead and compare to the dest file?
-# Set window size by script
-# Emercency triggers for checksum errors (exit codes 2 and 3) -> make backup folder

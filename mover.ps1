@@ -52,19 +52,23 @@ $copy_functions = {
 	if (copy-and-check $file $destination){
 		if ($delete -eq "y"){
 			Remove-Item $file
+			# Code 1: File was successfully moved
 			Write-Output "1"
 		} else {
 			#Move item instead? -> Will be faster?
 			if(copy-and-check $file ($src+"\original")){
 				Remove-Item $file
+				# Code 1: File was successfully moved
 				Write-Output "1"
 			} else {
-				# This is severe, because the backup seems a problem
+				# Code 2: There was a problem while backing up the file to original
+				# TODO: This should trigger a retry!
 				Write-Output "2"
 			}
 		}
 	} else {
-		# This should trigger to copy the file to original
+		# Code 3: The initial copying from scr to dest failed.
+		# TODO: This should trigger a retry of the process
 		Write-Output "3"
 	}
 }
@@ -110,20 +114,14 @@ $debug = Read-Host -Prompt 'Debug mode? (y/n)'
 
 # File size
 $filesize = 0
-# Run switch for the main while loop
-$active = $TRUE
 # Array list to hold the currently processed files
 $batch = @()
-
+# Starting time of the sript
 $startTime = Get-Date
-
+# Last timing tick
 $lastTick = Get-Date
 
-
-
-
-
-while ($active) {
+while ($TRUE) {
 	if ($filesize -eq 0) {
 		# Here some start up routine, determine filesizes
 		$init_list = look-Files $src "*.mrc" "original"
@@ -158,27 +156,29 @@ while ($active) {
 				# Check states here: 1 = ok; 2 = checksum second copy; 3 = checksum first copy
 				if ($out -eq 1){
 					Write-Host "Done copying "$job.Name
-					
 				} elseif ($out -eq 2){
-					Write-Host "A checksum error occured while copying "$job.Name
-					Write-Host "Kept the original file just in case."
+					Write-Host "A checksum error occured while backing up "$job.Name
+					Write-Host "Kept the original file just in case. This file will not be moved again."
 					if ($debug -eq "y"){
 						write-Debug $job.Name $src $destination $batch $out
 					}
 					
 				} elseif($out -eq 3){
-					Write-Host "A checksum error occured while copying "$job.Name
-					Write-Host "Kept the original file just in case."
+					Write-Host "Copying of"$job.Name" failed. Retry later again."
+					# Remove this file from the batch
+					$batch = $batch | where {$_ -ne $job.Name}
+					# Remove this file from the destination
+					$filename = Split-Path -Path $job.Name -Leaf
+					Remove-Item $destination"\"$filename
 					if ($debug -eq "y"){
 						write-Debug $job.Name $src $destination $batch $out
 					}
 					
 				} else {
 					Write-Host "An unknown error has occured. Stopping execution."
-					if ($debug -eq "y"){
-						write-Debug $job.Name $src $destination $batch $out
-					}
-					$active = $FALSE
+					Write-Debug $job.Name $src $destination $batch $out
+					Write-Host "Wrote debug information."
+					exit
 				}
 				# Remove the jobs that are done
 				$job | Remove-Job

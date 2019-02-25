@@ -27,6 +27,27 @@ function write-Debug($filename, $source, $dest, $batch, $error){
 	exit
 }
 
+# A function to test whether the file is actually locked by the OS
+function Test-FileLock {
+	param ([parameter(Mandatory=$true)][string]$Path)
+	
+	if ((Test-Path -Path $Path) -eq $false){
+		return $false
+	} else {
+		$oFile = New-Object System.IO.FileInfo $Path
+		try {
+			$oStream = $oFile.Open([System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+			if ($oStream){
+				$oStream.Close()
+			}
+			return $true
+		} catch {
+		# file is locked by a process.
+			return $false
+		}
+	}
+}
+
 # This is teh code executed by the spawned job
 $copy_functions = {
 	Param(	$file,
@@ -51,7 +72,9 @@ $copy_functions = {
 
 	if (copy-and-check $file $destination){
 		if ($delete -eq "y"){
-			Remove-Item $file
+			if ((Test-Path -path $file) -eq $TRUE){
+				Remove-Item $file
+			}
 			# Code 1: File was successfully moved
 			Write-Output "1"
 		} else {
@@ -203,13 +226,19 @@ while ($TRUE) {
 					if ($fiList.count -ne 0){					
 						# Gets the first object from the clean file list
 						$current_file = $fiList[0]
-						Write-Host "Start copying "$current_file.FullName
-						$jo = Start-Job -name $current_file.FullName -ScriptBlock $copy_functions -ArgumentList $current_file,$destination,$delete,$src
-						
-						#Adds the current item to the batch
-						$batch += $current_file.FullName
-						# Removes the current item from the file list
-						$fiList = $fiList | where { $batch -notcontains $_.FullName }
+						if ( (Test-FileLock $current_file) -eq $true){
+							Write-Host "Start copying "$current_file.FullName
+							$jo = Start-Job -name $current_file.FullName -ScriptBlock $copy_functions -ArgumentList $current_file,$destination,$delete,$src
+							
+							#Adds the current item to the batch
+							$batch += $current_file.FullName
+							# Removes the current item from the file list
+							$fiList = $fiList | where { $batch -notcontains $_.FullName }
+						} else {
+							if ($debug -eq "y"){
+								Write-Host $current_file" is locked."
+							}
+						}
 					}
 				}
 			}

@@ -50,22 +50,29 @@ function Test-FileLock {
 
 # This is teh code executed by the spawned job
 $copy_functions = {
-	Param(	$file,
-			$destination,
-			$delete,
+	Param(	$file, # Full file name of the file to be copied
+			$destination, #Where to copy
+			$delete, # Should the original be deleted?
 			$src) # the source path to locate the original folder
 	
 	# Copies an Item and checks by file hash
 	function copy-and-check($file, $dest){
 		# Copy the item
-		Copy-Item "$file" -Destination "$dest" -Force
-		Start-Sleep 5
+		# TODO: make temp file for check and then rename
+		$temp_name = $dest+"\"+$file.Name+".tmp"
+		Copy-Item "$file" -Destination "$temp_name" -Force
+		
 		# Checking the hashes
-		if( (Get-FileHash $file.FullName -Algorithm "md5").hash -eq (Get-FileHash ($dest+"\"+$file.Name) -Algorithm "md5").hash){
+		if( (Get-FileHash $file.FullName -Algorithm "md5").hash -eq (Get-FileHash $temp_name -Algorithm "md5").hash){
+			Rename-Item -Path $temp_name -NewName $file.Name
 			return $TRUE
 		} else {
+			# No rename in case of failure
+			# Delete failed file
+			Remove-Item $temp_name
 			return $FALSE
 		}
+		
 	}
 
 # Do the work here
@@ -86,12 +93,14 @@ $copy_functions = {
 			} else {
 				# Code 2: There was a problem while backing up the file to original
 				# TODO: This should trigger a retry!
+				# Dest file is already removed by copy and check
+				# Staring file is kept
+				# Remove from batch!
 				Write-Output "2"
 			}
 		}
 	} else {
 		# Code 3: The initial copying from scr to dest failed.
-		# TODO: This should trigger a retry of the process
 		Write-Output "3"
 	}
 }
@@ -181,18 +190,16 @@ while ($TRUE) {
 					Write-Host "Done copying "$job.Name
 				} elseif ($out -eq 2){
 					Write-Host "A checksum error occured while backing up "$job.Name
-					Write-Host "Kept the original file just in case. This file will not be moved again."
+					# Remove this file from the batch
+					$batch = $batch | where {$_ -ne $job.Name}
+					Write-Host "Try later again."
 					if ($debug -eq "y"){
 						write-Debug $job.Name $src $destination $batch $out
 					}
-					
 				} elseif($out -eq 3){
 					Write-Host "Copying of"$job.Name" failed. Retry later again."
 					# Remove this file from the batch
 					$batch = $batch | where {$_ -ne $job.Name}
-					# Remove this file from the destination
-					$filename = Split-Path -Path $job.Name -Leaf
-					Remove-Item $destination"\"$filename
 					if ($debug -eq "y"){
 						write-Debug $job.Name $src $destination $batch $out
 					}

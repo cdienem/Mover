@@ -3,12 +3,12 @@ function look-Files($lookupPath, $extension, $filter){
 	return $files
 }
 
-function write-Debug($filename, $source, $dest, $batch, $error){
+function write-Debug($filename, $source, $dest, $batch, $error, $extension){
 	# Should retrieve the fileobject in question
 	# A list of files in source and dest
 	# The current batch
-	$sourcefiles = look-Files $source "*.mrc" "original"
-	$destfiles = look-Files $dest "*.mrc" "original"
+	$sourcefiles = look-Files $source "*$extension" "original"
+	$destfiles = look-Files $dest "*$extension" "original"
 	$out = "
 	Error Type: $error
 	File name: $filename
@@ -106,10 +106,14 @@ $copy_functions = {
 }
 
 
-
-
 # get inputs
-$src = Read-Host -Prompt 'Path to MRC stacks'
+$ext = Read-Host -Prompt 'File extension'
+
+if (($ext.StartsWith(".")) -eq $FALSE){
+	$ext = ".$ext"
+}
+
+$src = Read-Host -Prompt 'Path to image stacks'
 # Check existence
 if(!(Test-Path -Path $src )){
 	Write-Host "$src does not exist."
@@ -117,7 +121,7 @@ if(!(Test-Path -Path $src )){
 }
 Write-Host "Reading stacks from $src"
 
-$destination = Read-Host -Prompt 'Destination for MRC stacks'
+$destination = Read-Host -Prompt 'Destination for image stacks'
 # Check existence
 if(!(Test-Path -Path $destination )){
 	Write-Host "$destination does not exist."
@@ -144,8 +148,7 @@ if ($delete -eq "y"){
 }
 $debug = Read-Host -Prompt 'Debug mode? (y/n)'
 
-# File size
-$filesize = 0
+
 # Array list to hold the currently processed files
 $batch = @()
 # Starting time of the sript
@@ -154,114 +157,95 @@ $startTime = Get-Date
 $lastTick = Get-Date
 
 while ($TRUE) {
-	if ($filesize -eq 0) {
-		# Here some start up routine, determine filesizes
-		$init_list = look-Files $src "*.mrc" "original"
-		# wait for the first 4 files to appear
-		if ($init_list.count -ge 4){
-			$test_files = $init_list[0..3].FullName
-			while($true){
-				if ( ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[1]).length) -and ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[2]).length) -and ((Get-Item $test_files[0]).length -eq (Get-Item $test_files[3]).length)){
-					$filesize = (Get-Item $test_files[0]).length
-					Write-Host "Successfully determined expected file size ($filesize bytes)."
-					break
-				} else {
-					Write-Host "Waiting to determine expected filesize from first 4 files..."
-					Start-Sleep 5
-				}
-			}
-		} else {
-			Write-Host "Waiting for enough files to determine filesize..."
-			Start-sleep 5
-		}
-	} else {
-		# Start the actual moving here
-		# look for jobs
-		$running = Get-Job
-		
-		# look through them if there is completed ones
-		foreach ($job in $running){
-			if ($job.state -eq "Completed"){
-				#$job | Select-Object -Property *
-				# Job should return a number
-				[int]$out = ($job | Receive-Job)
-				# Check states here: 1 = ok; 2 = checksum second copy; 3 = checksum first copy
-				if ($out -eq 1){
-					Write-Host "Done copying "$job.Name
-				} elseif ($out -eq 2){
-					Write-Host "A checksum error occured while backing up "$job.Name
-					# Remove this file from the batch
-					$batch = $batch | where {$_ -ne $job.Name}
-					Write-Host "Try later again."
-					if ($debug -eq "y"){
-						write-Debug $job.Name $src $destination $batch $out
-					}
-				} elseif($out -eq 3){
-					Write-Host "Copying of"$job.Name" failed. Retry later again."
-					# Remove this file from the batch
-					$batch = $batch | where {$_ -ne $job.Name}
-					if ($debug -eq "y"){
-						write-Debug $job.Name $src $destination $batch $out
-					}
-					
-				} else {
-					Write-Host "An unknown error has occured. Stopping execution."
-					Write-Debug $job.Name $src $destination $batch $out
-					Write-Host "Wrote debug information."
-					exit
-				}
-				# Remove the jobs that are done
-				$job | Remove-Job
-			}
-		}
-		
-		# Check if new jobs have to be started
-		$num_running = $running.count
-		if ($num_running -lt $limit){
-			# Check the files to be done, this gives full file objects
-			$list_result = look-Files $src "*.mrc" "original"
 
-			if ($list_result.count -ne 0){
-												
+	# Start the actual moving here
+	# look for jobs
+	$running = Get-Job
+	
+	# look through them if there is completed ones
+	foreach ($job in $running){
+		if ($job.state -eq "Completed"){
+			#$job | Select-Object -Property *
+			# Job should return a number
+			[int]$out = ($job | Receive-Job)
+			# Check states here: 1 = ok; 2 = checksum second copy; 3 = checksum first copy
+			if ($out -eq 1){
+				Write-Host "Done copying "$job.Name
+			} elseif ($out -eq 2){
+				Write-Host "A checksum error occured while backing up "$job.Name
+				# Remove this file from the batch
+				$batch = $batch | where {$_ -ne $job.Name}
+				Write-Host "Try later again."
+				if ($debug -eq "y"){
+					write-Debug $job.Name $src $destination $batch $out $ext
+				}
+			} elseif($out -eq 3){
+				Write-Host "Copying of"$job.Name" failed. Retry later again."
+				# Remove this file from the batch
+				$batch = $batch | where {$_ -ne $job.Name}
+				if ($debug -eq "y"){
+					write-Debug $job.Name $src $destination $batch $out $ext
+				}
 				
-				# Clean the filelist from the ones that are contained in the batch
-				$fiList = $list_result | where { $batch -notcontains $_.FullName }
-				
-				# Start jobs			
-				for ($i=0; $i -lt ($limit-$num_running); $i++){
-					# If there is no files left, dont do anything
-					if ($fiList.count -ne 0){					
-						# Gets the first object from the clean file list
-						$current_file = $fiList[0]
-						if ( (Test-FileLock $current_file) -eq $true){
-							Write-Host "Start copying "$current_file.FullName
-							$jo = Start-Job -name $current_file.FullName -ScriptBlock $copy_functions -ArgumentList $current_file,$destination,$delete,$src
-							
-							#Adds the current item to the batch
-							$batch += $current_file.FullName
-							# Removes the current item from the file list
-							$fiList = $fiList | where { $batch -notcontains $_.FullName }
-						} else {
-							if ($debug -eq "y"){
-								Write-Host $current_file" is locked."
-							}
+			} else {
+				Write-Host "An unknown error has occured. Stopping execution."
+				Write-Debug $job.Name $src $destination $batch $out $ext
+				Write-Host "Wrote debug information."
+				exit
+			}
+			# Remove the jobs that are done
+			$job | Remove-Job
+		}
+	}
+	
+	# Check if new jobs have to be started
+	$num_running = $running.count
+	if ($num_running -lt $limit){
+		# Check the files to be done, this gives full file objects
+		$list_result = look-Files $src "*$ext" "original"
+
+		if ($list_result.count -ne 0){
+											
+			
+			# Clean the filelist from the ones that are contained in the batch
+			$list_no_batch = $list_result | where { $batch -notcontains $_.FullName }
+			# Remove files newer than 1 minute			
+			$fiList = $list_no_batch | Where {$_.LastWriteTime -lt (Get-Date).AddMinutes(-1)}
+
+			# Start jobs			
+			for ($i=0; $i -lt ($limit-$num_running); $i++){
+				# If there is no files left, dont do anything
+				if ($fiList.count -ne 0){					
+					# Gets the first object from the clean file list
+					$current_file = $fiList[0]
+					if ( (Test-FileLock $current_file) -eq $true){
+						Write-Host "Start copying "$current_file.FullName
+						$jo = Start-Job -name $current_file.FullName -ScriptBlock $copy_functions -ArgumentList $current_file,$destination,$delete,$src
+						
+						#Adds the current item to the batch
+						$batch += $current_file.FullName
+						# Removes the current item from the file list
+						$fiList = $fiList | where { $batch -notcontains $_.FullName }
+					} else {
+						if ($debug -eq "y"){
+							Write-Host $current_file" is locked."
 						}
 					}
 				}
 			}
-			
-			$timeSincelastTick = (New-TimeSpan -Start $lastTick -End (Get-Date)).TotalSeconds
-			if ($timeSincelastTick -gt 30){
-				# Status check
-				Write-Host "-------------------------------------"
-				Write-Host "Found "$list_result.count" new stacks."
-				# Speed check
-				[int]$runSpeed = $batch.count / (( ( (New-TimeSpan -Start $startTime -End (Get-Date)).TotalSeconds ) /60 ) / 60)
-				Write-Host "Running at "($runSpeed)" images per hour."
-				Write-Host "-------------------------------------"
-				# Set new tick
-				$lastTick = Get-Date
-			}
+		}
+		
+		$timeSincelastTick = (New-TimeSpan -Start $lastTick -End (Get-Date)).TotalSeconds
+		if ($timeSincelastTick -gt 30){
+			# Status check
+			Write-Host "-------------------------------------"
+			Write-Host "Found "$list_result.count" new stacks."
+			# Speed check
+			[int]$runSpeed = $batch.count / (( ( (New-TimeSpan -Start $startTime -End (Get-Date)).TotalSeconds ) /60 ) / 60)
+			Write-Host "Running at "($runSpeed)" images per hour."
+			Write-Host "-------------------------------------"
+			# Set new tick
+			$lastTick = Get-Date
 		}
 	}
 	Start-sleep 1
